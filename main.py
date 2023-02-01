@@ -20,17 +20,17 @@ n_classes = 10                  # number of classes (10 for MNIST)
 img_size = 784                # image size (28x28 for MNIST)
 
 # model hyperparameters
-batch_size = 64                 # lower for smaller VRAM
-max_iters = 1000                # maximum training iterations
+batch_size = 128                 # lower for smaller VRAM
+max_iters = 5000                # maximum training iterations
 eval_interval = 500             # steps after which eval set is evaluated
 learning_rate = 3e-4            # learning rate
 eval_iters = 200                # number of iterations for evaluation
 
-n_head = 14                     # number of attention heads 
-d_head = 56                     # dimension of each attention head
+n_head = 16                     # number of attention heads 
+d_head = 32                     # dimension of each attention head
 #n_embd = n_head * d_head       # embedding dimension (using head dimension * number of heads)
 n_embd = img_size               # instead of embedding dimension, use image size
-n_layers = 16                   # number of layers 
+n_layers = 8                   # number of layers 
 dropout = 0.1                   # dropout rate
 use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
 
@@ -268,6 +268,7 @@ def classify(img_num):
 
 
 # evaluate the model with the full test set
+# TODO: #1 add batch processing to speed up
 def evaluate():
     print('------------------------------------')
     print('evaluating the model')
@@ -282,6 +283,7 @@ def evaluate():
         index = logits.index(max_value)
         if index == mnist_test[i][1]:
             correct += 1
+    print(f'correct: {correct} out of {len(test_data)}')
     print(f'accuracy: {correct/len(test_data):.3f}')
 
 # Training
