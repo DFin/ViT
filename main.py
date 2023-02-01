@@ -1,9 +1,18 @@
 ''' 
-Implementing a Transformer model for image classification
+Implemention of a Transformer model for image classification
 
-Initially will just use MNIST handwritten digits and process the full image before implementing
-the 16x16 pixel input as described in the paper.
- 
+Initially this will just use MNIST handwritten digits and process the full
+28x28 image before implementing the 16x16 pixel input as described in the ViT paper.
+
+The transformer implementation follows mostly Karpathy's lection 6 in 
+https://github.com/karpathy/nn-zero-to-hero
+
+The main difference between the transformer here and GPT
+is that this model is not using any masking as for language prediction
+Also the embedding layer is replaced by a linear layer
+and there is no positional encoding for pixel positions
+(not sure if this would make sense for images apart from the 16x16 
+patch encoding in the ViT paper) #TODO try this
 '''
 
 import torch
@@ -14,7 +23,7 @@ import time
 
 # Hyperparameters & Global variables
 # ----------------
-
+#
 # global variables
 n_classes = 10                  # number of classes (10 for MNIST)
 img_size = 784                  # image size (28x28 for MNIST)
@@ -22,25 +31,19 @@ val_size = 10000                # take 10.000 images for the dev validation set
 
 # model hyperparameters
 batch_size = 512                # lower for smaller VRAM
-max_iters = 10000               # maximum training iterations
+max_iters = 5000               # maximum training iterations
 eval_interval = 500             # steps after which eval set is evaluated
 learning_rate = 3e-4            # learning rate
-eval_iters = 200                # number of iterations for evaluation
+eval_iters = 200                # number of samples for evaluation
 
-n_head = 8                     # number of attention heads 
-d_head = 32                     # dimension of each attention head
-n_embd = n_head * d_head       # embedding dimension (using head dimension * number of heads)
-#n_embd = img_size               # instead of embedding dimension, use image size
-n_layers = 8                   # number of layers 
+n_head = 16                     # number of attention heads 
+d_head = 64                     # dimension of each attention head
+n_embd = n_head * d_head        # embedding dimension (using head dimension * number of heads)
+#n_embd = img_size              # instead of embedding dimension, use image size
+n_layers = 12                   # number of layers 
 dropout = 0.1                   # dropout rate
 use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
-
-
 # ----------------
-
-
-# for reproducability:
-# torch.manual_seed(1337)
 
 # using cuda and Tensorcores if available
 if torch.cuda.is_available():
@@ -55,7 +58,7 @@ else:
 
 # Training data
 # --------------
-# using MNIST handwritten digits
+# MNIST handwritten digits for now
 from torchvision import datasets
 
 mnist_train=datasets.MNIST('data', train=True, download=True)
@@ -64,13 +67,12 @@ mnist_test=datasets.MNIST('data', train=False, download=False)
 # Data preprocessing
 # ------------------
 
-
 # convert PIL images to torch tensors 
 import torchvision.transforms as transforms
 transform = transforms.ToTensor()
 train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-val_data = train_data[len(mnist_train)-val_size:]
-train_data = train_data[:len(mnist_train)-val_size]
+val_data = train_data[len(mnist_train)-val_size:] # take last val_size images for validation
+train_data = train_data[:len(mnist_train)-val_size] # take the rest for training
 test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
 # convert labels to torch tensors with one-hot encoding
@@ -86,7 +88,7 @@ print("MNIST val set size: " + str(len(val_data)))
 print("MNIST test set size: " + str(len(mnist_test)))
 
 
-# # show an example image of the training data
+# # show an example image of the preprocessed training data
 # import matplotlib.pyplot as plt
 # rnd = torch.randint(0, len(mnist_train), (1,)).item()
 # print(f'showing image {rnd} with a: {(mnist_train[rnd][1])}')
@@ -97,9 +99,6 @@ print("MNIST test set size: " + str(len(mnist_test)))
 
 # Data batching
 # -------------
-
-
-# get a batch of data
 def get_batch(split):
     # generate a batch of data of inputs x and targets y
     if split == 'train':
@@ -118,10 +117,8 @@ def get_batch(split):
     return x, y
 
 
-
-
 # loss calcucation
-@torch.no_grad()
+@torch.no_grad() # no need to calculate gradients for evaluation
 def estimate_loss():
     out = {}
     model.eval()
@@ -135,10 +132,9 @@ def estimate_loss():
     model.train()
     return out
 
-
-# Transformer Model
-# --------------
-
+#
+#Transformer Model
+#----------------
 class Head(nn.Module):
     """ One head of self-attention """
     def __init__(self, head_size):
@@ -198,7 +194,6 @@ class FeedForward(nn.Module):
     def forward(self, x):
         return self.net(x)
     
-
 class Block(nn.Module):
     """ One block of the transformer """
     def __init__(self, n_embd, n_head):
@@ -213,8 +208,6 @@ class Block(nn.Module):
         x = x + self.attn(self.ln1(x))
         x = x + self.ff(self.ln2(x))
         return x
-
-
 
 class Transformer(nn.Module):
     """ the full transformer model """
@@ -242,24 +235,20 @@ class Transformer(nn.Module):
             loss = loss / B
         return logits, loss
 
-
 model = Transformer()
 m = model.to(device)   
+
 
 # print number of parameters
 print(f'number of parameters: %.2fM' %((sum(p.numel() for p in m.parameters() if p.requires_grad))/1e6))
 
 
 
-
-# classify a single image
+# classify a single image of the test set
 def classify(img_num):
     print('------------------------------------')
-    print(f'classifyig image {img_num} with a: {(mnist_test[img_num][1])}')
-    #print(f'label as one-hot is: {test_labels[img_num].numpy() }')
-
-    # add batch dimension
-    x = test_data[img_num].unsqueeze(0).to(device)
+    print(f'classifyig test image {img_num} with a: {(mnist_test[img_num][1])}')
+    x = test_data[img_num].unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
     logits, _ = model(x)
     logits = F.softmax(logits, dim=-1)
     logits = logits.detach().cpu().tolist()[0]
@@ -270,38 +259,18 @@ def classify(img_num):
     id_1 = logits.index(p1)
     id_2 = logits.index(p2)
     id_3 = logits.index(p3)
-    #print(f'label as one-hot is: {logits}')
-    print(f'predicted labels are: \n{id_1} with probability: {p1:.3f}\n{id_2} with probability: {p2:.3f}\n{id_3} with probability: {p3:.3f}')
+    print(f'predicted labels are: \n{id_1} with probability: {p1*100:.2f}%\n{id_2} with probability: {p2*100:.2f}%\n{id_3} with probability: {p3*100:.2f}%')
 
-
-# evaluate the model with the full test set
-# TODO: #1 add batch processing to speed up
-def evaluate():
-    print('------------------------------------')
-    print('evaluating the model')
-    print('------------------------------------')
-    correct = 0
-    for i in range(len(test_data)):
-        x = test_data[i].unsqueeze(0).to(device)
-        logits, _ = model(x)
-        logits = F.softmax(logits, dim=-1)
-        logits = logits.detach().cpu().tolist()[0]
-        max_value = max(logits)
-        index = logits.index(max_value)
-        if index == mnist_test[i][1]:
-            correct += 1
-    print(f'correct: {correct} out of {len(test_data)}')
-    print(f'accuracy: {correct/len(test_data):.3f}')
 
 # Training
 # --------------
 
 
-# optimizer
+# optimizer using AdamW 
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 
-# for tracking training time
+# get current time for tracking training time
 start_t = time.time()
 t = start_t
 
@@ -327,6 +296,7 @@ for iter in range(max_iters):
 total_duration = time.time() - start_t
 print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
 
+# example classification of the test set
 print('------------------------------------')
 print('example classification')
 print('------------------------------------')
@@ -335,8 +305,26 @@ for i in range(10):
     rnd = torch.randint(0, len(mnist_test), (1,)).item()
     classify(rnd)
 
+
+# evaluate the model with the full test set
 print('------------------------------------')
 print('final evaluation')
 print('------------------------------------')
+
+# TODO: #1 add batch processing to speed up
+def evaluate():
+    correct = 0
+    for i in range(len(test_data)):
+        x = test_data[i].unsqueeze(0).to(device)
+        logits, _ = model(x)
+        logits = F.softmax(logits, dim=-1)
+        logits = logits.detach().cpu().tolist()[0]
+        max_value = max(logits)
+        index = logits.index(max_value)
+        if index == mnist_test[i][1]:
+            correct += 1
+    print(f'correct: {correct} out of {len(test_data)}')
+    print(f'accuracy: {correct/len(test_data):.3f}')
+
 evaluate()
 
