@@ -1,5 +1,5 @@
 ''' 
-Implementing a Transformer model for image recognition
+Implementing a Transformer model for image classification
 
 Initially will just use MNIST handwritten digits and process the full image before implementing
 the 16x16 pixel input as described in the paper.
@@ -17,19 +17,20 @@ import time
 
 # global variables
 n_classes = 10                  # number of classes (10 for MNIST)
-img_size = 784                # image size (28x28 for MNIST)
+img_size = 784                  # image size (28x28 for MNIST)
+val_size = 10000                # take 10.000 images for the dev validation set
 
 # model hyperparameters
-batch_size = 128                 # lower for smaller VRAM
-max_iters = 5000                # maximum training iterations
+batch_size = 512                # lower for smaller VRAM
+max_iters = 10000               # maximum training iterations
 eval_interval = 500             # steps after which eval set is evaluated
 learning_rate = 3e-4            # learning rate
 eval_iters = 200                # number of iterations for evaluation
 
-n_head = 16                     # number of attention heads 
+n_head = 8                     # number of attention heads 
 d_head = 32                     # dimension of each attention head
-#n_embd = n_head * d_head       # embedding dimension (using head dimension * number of heads)
-n_embd = img_size               # instead of embedding dimension, use image size
+n_embd = n_head * d_head       # embedding dimension (using head dimension * number of heads)
+#n_embd = img_size               # instead of embedding dimension, use image size
 n_layers = 8                   # number of layers 
 dropout = 0.1                   # dropout rate
 use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
@@ -60,13 +61,6 @@ from torchvision import datasets
 mnist_train=datasets.MNIST('data', train=True, download=True)
 mnist_test=datasets.MNIST('data', train=False, download=False)
 
-print("MNIST train set size: " + str(len(mnist_train)))
-print("MNIST test set size: " + str(len(mnist_test)))
-
-
-
-
-
 # Data preprocessing
 # ------------------
 
@@ -75,15 +69,21 @@ print("MNIST test set size: " + str(len(mnist_test)))
 import torchvision.transforms as transforms
 transform = transforms.ToTensor()
 train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
+val_data = train_data[len(mnist_train)-val_size:]
+train_data = train_data[:len(mnist_train)-val_size]
 test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
 # convert labels to torch tensors with one-hot encoding
 def one_hot(labels, n_classes):
     return torch.eye(n_classes)[labels]
 train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
+val_labels = train_labels[len(train_labels)-val_size:]
+train_labels = train_labels[:len(train_labels)-val_size]
 test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
 
-
+print("MNIST train set size: " + str(len(train_data)))
+print("MNIST val set size: " + str(len(val_data)))
+print("MNIST test set size: " + str(len(mnist_test)))
 
 
 # # show an example image of the training data
@@ -102,8 +102,15 @@ test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_te
 # get a batch of data
 def get_batch(split):
     # generate a batch of data of inputs x and targets y
-    data_x = train_data if split == 'train' else test_data
-    data_y = train_labels if split == 'train' else test_labels
+    if split == 'train':
+        data_x = train_data
+        data_y = train_labels
+    elif split == 'test':
+        data_x = test_data
+        data_y = test_labels
+    else:
+        data_x = val_data
+        data_y = val_labels
     ix = torch.randint(len(data_x), size=(batch_size,))
     x = torch.stack([data_x[i] for i in ix])
     y = torch.stack([data_y[i] for i in ix])
