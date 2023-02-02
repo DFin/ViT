@@ -12,7 +12,7 @@ is that this model is not using any masking as for language prediction
 Also the embedding layer is replaced by a linear layer
 and there is no positional encoding for pixel positions
 (not sure if this would make sense for images apart from the 16x16 
-patch encoding in the ViT paper) #TODO try this
+patch encoding in the ViT paper) #TODO #3 try this
 '''
 
 import torch
@@ -27,11 +27,10 @@ import time
 # global variables
 n_classes = 10                  # number of classes (10 for MNIST)
 img_size = 784                  # image size (28x28 for MNIST)
-val_size = 10000                # take 10.000 images for the dev validation set
 
 # model hyperparameters
 batch_size = 512                # lower for smaller VRAM
-max_iters = 1000               # maximum training iterations
+max_iters = 10000               # maximum training iterations
 eval_interval = 500             # steps after which eval set is evaluated
 learning_rate = 3e-4            # learning rate
 eval_iters = 200                # number of samples for evaluation
@@ -71,30 +70,16 @@ mnist_test=datasets.MNIST('data', train=False, download=False)
 import torchvision.transforms as transforms
 transform = transforms.ToTensor()
 train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-#val_data = train_data[len(mnist_train)-val_size:] # take last val_size images for validation
-#train_data = train_data[:len(mnist_train)-val_size] # take the rest for training
 test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
 # convert labels to torch tensors with one-hot encoding
 def one_hot(labels, n_classes):
     return torch.eye(n_classes)[labels]
 train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
-#val_labels = train_labels[len(train_labels)-val_size:]
-#train_labels = train_labels[:len(train_labels)-val_size]
 test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
 
 print("MNIST train set size: " + str(len(train_data)))
-#print("MNIST val set size: " + str(len(val_data)))
 print("MNIST test set size: " + str(len(mnist_test)))
-
-
-# # show an example image of the preprocessed training data
-# import matplotlib.pyplot as plt
-# rnd = torch.randint(0, len(mnist_train), (1,)).item()
-# print(f'showing image {rnd} with a: {(mnist_train[rnd][1])}')
-# print(f'label as one-hot is: {train_labels[rnd].numpy() }')
-# plt.imshow(train_data[rnd].reshape(28,28), cmap='gray')
-# plt.show()
 
 
 # Data batching
@@ -104,12 +89,9 @@ def get_batch(split, bs=batch_size, rnd=True, start_ix=0):
     if split == 'train':
         data_x = train_data
         data_y = train_labels
-    else: #elif split == 'test':
+    else: 
         data_x = test_data
         data_y = test_labels
-    #else:
-    #    data_x = val_data
-    #    data_y = val_labels
     if rnd:
         ix = torch.randint(len(data_x), size=(bs,))
     else:
@@ -247,24 +229,6 @@ print(f'number of parameters: %.2fM' %((sum(p.numel() for p in m.parameters() if
 
 
 
-# classify a single image of the test set
-def classify(img_num):
-    print('------------------------------------')
-    print(f'classifyig test image {img_num} with a: {(mnist_test[img_num][1])}')
-    x = test_data[img_num].unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
-    logits, _ = model(x)
-    logits = F.softmax(logits, dim=-1)
-    logits = logits.detach().cpu().tolist()[0]
-    sorted_list = sorted(logits, reverse=True)
-    p1 = sorted_list[0]
-    p2 = sorted_list[1]
-    p3 = sorted_list[2]
-    id_1 = logits.index(p1)
-    id_2 = logits.index(p2)
-    id_3 = logits.index(p3)
-    print(f'predicted labels are: \n{id_1} with probability: {p1*100:.2f}%\n{id_2} with probability: {p2*100:.2f}%\n{id_3} with probability: {p3*100:.2f}%')
-
-
 # Training
 # --------------
 
@@ -306,6 +270,25 @@ print('------------------------------------')
 print('example classification')
 print('------------------------------------')
 
+# classify a single image of the test set
+def classify(img_num):
+    print('------------------------------------')
+    print(f'classifyig test image {img_num} with a: {(mnist_test[img_num][1])}')
+    x = test_data[img_num].unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
+    logits, _ = model(x)
+    logits = F.softmax(logits, dim=-1)
+    logits = logits.detach().cpu().tolist()[0]
+    sorted_list = sorted(logits, reverse=True)
+    p1 = sorted_list[0]
+    p2 = sorted_list[1]
+    p3 = sorted_list[2]
+    id_1 = logits.index(p1)
+    id_2 = logits.index(p2)
+    id_3 = logits.index(p3)
+    print(f'predicted labels are: \n{id_1} with probability: {p1*100:.2f}%\n{id_2} with probability: {p2*100:.2f}%\n{id_3} with probability: {p3*100:.2f}%')
+
+
+# classify 10 random images of the test set
 for i in range(10):
     rnd = torch.randint(0, len(mnist_test), (1,)).item()
     classify(rnd)
@@ -343,3 +326,4 @@ def evaluate():
 
 evaluate()
 
+print('------------------------------------')
