@@ -31,7 +31,7 @@ val_size = 10000                # take 10.000 images for the dev validation set
 
 # model hyperparameters
 batch_size = 512                # lower for smaller VRAM
-max_iters = 5000               # maximum training iterations
+max_iters = 1000               # maximum training iterations
 eval_interval = 500             # steps after which eval set is evaluated
 learning_rate = 3e-4            # learning rate
 eval_iters = 200                # number of samples for evaluation
@@ -40,7 +40,7 @@ n_head = 16                     # number of attention heads
 d_head = 64                     # dimension of each attention head
 n_embd = n_head * d_head        # embedding dimension (using head dimension * number of heads)
 #n_embd = img_size              # instead of embedding dimension, use image size
-n_layers = 12                   # number of layers 
+n_layers = 16                   # number of layers 
 dropout = 0.1                   # dropout rate
 use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
 # ----------------
@@ -71,20 +71,20 @@ mnist_test=datasets.MNIST('data', train=False, download=False)
 import torchvision.transforms as transforms
 transform = transforms.ToTensor()
 train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-val_data = train_data[len(mnist_train)-val_size:] # take last val_size images for validation
-train_data = train_data[:len(mnist_train)-val_size] # take the rest for training
+#val_data = train_data[len(mnist_train)-val_size:] # take last val_size images for validation
+#train_data = train_data[:len(mnist_train)-val_size] # take the rest for training
 test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
 # convert labels to torch tensors with one-hot encoding
 def one_hot(labels, n_classes):
     return torch.eye(n_classes)[labels]
 train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
-val_labels = train_labels[len(train_labels)-val_size:]
-train_labels = train_labels[:len(train_labels)-val_size]
+#val_labels = train_labels[len(train_labels)-val_size:]
+#train_labels = train_labels[:len(train_labels)-val_size]
 test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
 
 print("MNIST train set size: " + str(len(train_data)))
-print("MNIST val set size: " + str(len(val_data)))
+#print("MNIST val set size: " + str(len(val_data)))
 print("MNIST test set size: " + str(len(mnist_test)))
 
 
@@ -99,18 +99,21 @@ print("MNIST test set size: " + str(len(mnist_test)))
 
 # Data batching
 # -------------
-def get_batch(split):
+def get_batch(split, bs=batch_size, rnd=True, start_ix=0):
     # generate a batch of data of inputs x and targets y
     if split == 'train':
         data_x = train_data
         data_y = train_labels
-    elif split == 'test':
+    else: #elif split == 'test':
         data_x = test_data
         data_y = test_labels
+    #else:
+    #    data_x = val_data
+    #    data_y = val_labels
+    if rnd:
+        ix = torch.randint(len(data_x), size=(bs,))
     else:
-        data_x = val_data
-        data_y = val_labels
-    ix = torch.randint(len(data_x), size=(batch_size,))
+        ix = torch.arange(start_ix, start_ix+bs)
     x = torch.stack([data_x[i] for i in ix])
     y = torch.stack([data_y[i] for i in ix])
     x, y = x.to(device), y.to(device)
@@ -122,7 +125,7 @@ def get_batch(split):
 def estimate_loss():
     out = {}
     model.eval()
-    for split in ['train', 'val']:
+    for split in ['train', 'test']: #'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
@@ -275,26 +278,28 @@ start_t = time.time()
 t = start_t
 
 # training loop
-for iter in range(max_iters):
-    # every once in a while evaluate the loss on the train and val sets
-    if iter % eval_interval == 0:
-        losses = estimate_loss()
-        dt = time.time() - t
-        total_t = time.time() - start_t
-        t = time.time()
-        print(f'iter: {iter} train loss: {losses["train"]:.3f} val loss: {losses["val"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
+train = True
+if train == True:
+    for iter in range(max_iters):
+        # every once in a while evaluate the loss on the train and val sets
+        if iter % eval_interval == 0:
+            losses = estimate_loss()
+            dt = time.time() - t
+            total_t = time.time() - start_t
+            t = time.time()
+            print(f'iter: {iter} train loss: {losses["train"]:.3f} val loss: {losses["test"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
 
-    # smaple a batch of data
-    xb, yb = get_batch('train')
+        # smaple a batch of data
+        xb, yb = get_batch('train')
 
-    # evaluate the loss
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
+        # evaluate the loss
+        logits, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
 
-total_duration = time.time() - start_t
-print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
+    total_duration = time.time() - start_t
+    print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
 
 # example classification of the test set
 print('------------------------------------')
@@ -311,19 +316,29 @@ print('------------------------------------')
 print('final evaluation')
 print('------------------------------------')
 
-# TODO: #1 add batch processing to speed up
 def evaluate():
-    correct = 0
-    for i in range(len(test_data)):
-        x = test_data[i].unsqueeze(0).to(device)
+    def eval(x,y):
         logits, _ = model(x)
         logits = F.softmax(logits, dim=-1)
-        logits = logits.detach().cpu().tolist()[0]
-        max_value = max(logits)
-        index = logits.index(max_value)
-        if index == mnist_test[i][1]:
-            correct += 1
-    print(f'correct: {correct} out of {len(test_data)}')
+        max_value = torch.max(logits, dim=1, keepdim=True)  # get maximum value of each row 
+        index = max_value[1] # get the index 
+        result = y.gather(dim=1, index=index) # get the index of the correct label
+        result = result.sum()  # since this will be 0 for incorrect predictions and 1 for correct predictions we can just sum up
+        return result
+    
+    correct = 0
+    for i in range(len(test_data)//batch_size):
+        x,y = get_batch('test', bs=batch_size, rnd=False, start_ix=i*batch_size)
+        result = eval(x,y)
+        correct += result
+
+    # get the rest of the data that is not a multiple of batch_size
+    rest_bs = len(test_data)%batch_size
+    x,y = get_batch('test', bs=rest_bs, rnd=False, start_ix=len(test_data)-rest_bs)
+    result = eval(x,y)
+    correct += result
+    
+    print(f'correct: {int(correct)} out of {len(test_data)}')
     print(f'accuracy: {correct/len(test_data):.3f}')
 
 evaluate()
