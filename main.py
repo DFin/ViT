@@ -42,7 +42,7 @@ n_embd = img_size               # instead of embedding dimension, use image size
 n_layers = 16                   # number of layers 
 dropout = 0.1                   # dropout rate
 use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
-use_positional_encoding = True  # if positional encoding of pixel positions should be used
+# use_positional_encoding = False  # if positional encoding of pixel positions should be used
 # ----------------
 
 # using cuda and Tensorcores if available
@@ -79,36 +79,40 @@ def one_hot(labels, n_classes):
 
 
 
-if use_positional_encoding:
-    def add_positional_enc(data_set):
-        # TODO: #4 This is actually pretty dumb, since the positional encoding is the same for all images
-        #       and could be calculated once and then just added to each image
-        img = transform(data_set[0][0]) # get first image to get size of image
-        # add row and colum index numbers to the tensor
-        row_indices = torch.arange(0, img.size(1)).unsqueeze(-1) # make a row vector with indices
-        row_indices = row_indices.repeat(1, img.size(2)) # repeat the row vector for each column
-        row_indices = row_indices.flatten()
-        col_indices = torch.arange(0, img.size(2)).unsqueeze(0) # make a column vector with indices
-        col_indices = col_indices.repeat(img.size(1), 1)    # repeat the column vector for each row
-        col_indices = col_indices.flatten()
+# if use_positional_encoding:
+#     def add_positional_enc(data_set):
+#         # TODO: #4 This is actually pretty dumb, since the positional encoding is the same for all images
+#         #       and could be calculated once and then just added to each image
+#         img = transform(data_set[0][0]) # get first image to get size of image
+#         # add row and colum index numbers to the tensor
+#         row_indices = torch.arange(0, img.size(1)).unsqueeze(-1) # make a row vector with indices
+#         row_indices = row_indices.repeat(1, img.size(2)) # repeat the row vector for each column
+#         row_indices = row_indices.flatten()
+#         col_indices = torch.arange(0, img.size(2)).unsqueeze(0) # make a column vector with indices
+#         col_indices = col_indices.repeat(img.size(1), 1)    # repeat the column vector for each row
+#         col_indices = col_indices.flatten()
 
-        for i in range(1024):#(len(data_set)):
-            img = transform(data_set[i][0])
-            img = img.flatten()
-            img = torch.stack((row_indices, col_indices, img), dim=1)
+#         for i in range(len(data_set)):
+#             img = transform(data_set[i][0])
+#             img = img.flatten()
+#             img = torch.stack((row_indices, col_indices, img), dim=1)
         
-            if i == 0:
-                data_out = img.unsqueeze(0) # add dim to concat along first dim later
-            else:
-                data_out = torch.cat((data_out, img.unsqueeze(0)), dim=0)
-        return data_out
+#             if i == 0:
+#                 data_out = img.unsqueeze(0) # add dim to concat along first dim later
+#             else:
+#                 data_out = torch.cat((data_out, img.unsqueeze(0)), dim=0)
+#         return data_out
 
-    train_data = add_positional_enc(mnist_train)
-    test_data = add_positional_enc(mnist_test)  
+#     train_data = add_positional_enc(mnist_train)
+#     test_data = add_positional_enc(mnist_test)  
 
-else:
-    train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-    test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
+# else:
+
+#     train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
+#     test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
+
+train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
+test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
 train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
 test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
@@ -253,13 +257,14 @@ class Transformer(nn.Module):
         self.linear_f = nn.Linear(n_embd, n_classes)
 
     def forward(self, x, y=None):
-        # testing out without projection layer 
-        # this will loop the image through the residual layers
-        # if image size is not equal to embedding size then project
+
         if img_size != n_embd:
+            # testing out without projection layer 
+            # this will loop the image through the residual layers
+            # if image size is not equal to embedding size then project
             x = self.projection(x)  #(B, img_size) -> (B, n_embd)
-        if use_positional_encoding:
-            x =  self.positional_encoding_x(x[:,:,1]) + self.positional_encoding_y(x[:,:,0]) + self.projection(x[:,:,2])
+        #if use_positional_encoding:
+        #    x =  self.positional_encoding_x(x[:,:,1]) + self.positional_encoding_y(x[:,:,0]) + self.projection(x[:,:,2])
         x = self.blocks(x)  # (B, N, n_embd) -> (B, N, n_embd)
         x = self.ln_f(x)
         logits = self.linear_f(x) 
