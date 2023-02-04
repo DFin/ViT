@@ -8,7 +8,7 @@
  This is soley for my own education to learn about transformers in computer vision,
  but I share the repo in case someone else profits from this.
 
- # mini_ViT.py
+ # mini-ViT.py
 
 mini-ViT.py is a ~350 line of code standalone implementation of a transformer for MNIST
 handwriting recognotion. It uses 16 layers of Multi-head self attention with 14 heads 
