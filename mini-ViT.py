@@ -10,7 +10,7 @@ image classification in general. The full ViT implementation will follow soon
 in a seperate file.
 
 The model size is also huge for MNIST and I didnt do any optimisations, but
-it reaches a decent accuracy of 98.5% on the test set.
+it reaches a decent accuracy of ~98.5% on the test set.
 
 
 The transformer implementation follows mostly Karpathy's lection 6 in 
@@ -127,11 +127,11 @@ def get_batch(split, bs=batch_size, rnd=True, start_ix=0):
 def estimate_loss():
     out = {}
     model.eval()
-    for split in ['train', 'test']: #'val']:
+    for split in ['train', 'test']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            logits, loss = model(X, Y)
+            _ , loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()
@@ -227,7 +227,7 @@ class Transformer(nn.Module):
 
         if img_size != n_embd:
             x = self.projection(x)  #(B, img_size) -> (B, n_embd)
-        x = self.blocks(x)  # (B, N, n_embd) -> (B, N, n_embd)
+        x = self.blocks(x)   
         x = self.ln_f(x)
         logits = self.linear_f(x) 
 
@@ -329,6 +329,7 @@ def evaluate():
         return result
     
     correct = 0
+    # evaluate the model in batches 
     for i in range(len(test_data)//batch_size):
         x,y = get_batch('test', bs=batch_size, rnd=False, start_ix=i*batch_size)
         result = eval(x,y)
@@ -341,7 +342,7 @@ def evaluate():
     correct += result
     
     print(f'correct: {int(correct)} out of {len(test_data)}')
-    print(f'accuracy: {100*correct/len(test_data):.3f}%')
+    print(f'accuracy: {100*correct/len(test_data):.2f}%')
 
 evaluate()
 
