@@ -1,8 +1,9 @@
 ''' 
 Basically the same as mini-ViT.py, but with a concatenation of the input 
-with the output of the transformer blocks. Embedding dimension is 2ximg_size, 
-but the last of the transformer feed forward has img_size dimension size instead
-of n_embd to be able to concatenate the input with the output of the transformer blocks.
+with the output of the transformer blocks. Embedding dimension is 2ximg_size.
+After the transfromer there is an additional projection feed forward layer 
+that projects from n_embd to img_size to be able to concatenate the input
+with the output of the transformer blocks.
 
 This is a seperate file to keep the the mini-ViT.py file clean and easy to read.
 
@@ -23,16 +24,17 @@ img_size = 784                  # image size (28x28 for MNIST)
 
 # model hyperparameters
 batch_size = 512                # lower for smaller VRAM (512 needs around 22 GB VRAM)
-max_iters = 10000                # maximum training iterations (very long training time, this can be lowered)
-learning_rate = 1e-4            # learning rate
+max_iters = 5000                # maximum training iterations (very long training time, this can be lowered)
+learning_rate = 5e-5            # learning rate
 eval_interval = 500             # steps after which eval set is evaluated
 eval_iters = 200                # number of samples taken for evaluation
 
 n_head = 16                     # number of attention heads (16 because 16x98 = 1568 = 2ximg_size)
-d_head = 98                     # dimension of each attention head (56 because 16x98 = 1568 = 2ximg_size)
+d_head = 98                     # dimension of each attention head (98 because 16x98 = 1568 = 2ximg_size)
 n_embd = 2 * img_size           # for n_emb we use the concatenation of the input and the previous layer so 2ximg_size
 n_layers = 16                   # number of layers 
 dropout = 0.1                   # dropout rate
+use_lr_exp_decay = True         # do learning rate exponential decay
 # ----------------
 
 # using cuda and Tensorcores if available
@@ -57,43 +59,40 @@ mnist_test=datasets.MNIST('data', train=False, download=True)
 # Data preprocessing
 # ------------------
 
-# convert PIL images to torch tensors 
 import torchvision.transforms as transforms
-transform = transforms.ToTensor()
+
+# convert PIL images to torch tensors 
+to_tensor = transforms.ToTensor()
+
+# data augmentation
+augment = transforms.Compose([
+    transforms.RandomRotation(20),
+    transforms.RandomAffine(0, translate=(0.2, 0.2)),
+    ])
+
 # one hot encoding of labels
 def one_hot(labels, n_classes):
     return torch.eye(n_classes)[labels]
 
 
-train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
-train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
-test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
-
-    
- 
-print("MNIST train set size: " + str(len(train_data)))
-print("MNIST test set size: " + str(len(test_data)))
-
-
-# Data batching
-def get_batch(split, bs=batch_size, rnd=True, start_ix=0):
+def get_batch(split, bs=batch_size, start_ix=0):
     # generate a batch of data of inputs x and targets y
     if split == 'train':
-        data_x = train_data
-        data_y = train_labels
+        data = mnist_train
+        ix = torch.randint(len(data), size=(bs,))
+        x = torch.stack([to_tensor(augment(data[i][0])).flatten() for i in ix])
     else: 
-        data_x = test_data
-        data_y = test_labels
-    if rnd:
-        ix = torch.randint(len(data_x), size=(bs,))
-    else:
+        data = mnist_test
         ix = torch.arange(start_ix, start_ix+bs)
-    x = torch.stack([data_x[i] for i in ix])
-    y = torch.stack([data_y[i] for i in ix])
+        x = torch.stack([to_tensor(data[i][0]).flatten() for i in ix])
+    y = torch.stack([one_hot(data[i][1], 10) for i in ix])
     x, y = x.to(device), y.to(device)
     return x, y
+
+
+
+
 
 
 # loss calcucation
@@ -160,7 +159,7 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(n_embd, 4*n_embd),
             nn.GELU(),
-            nn.Linear(4*n_embd, n_embd//2) # n_embd//2 because of the residual connection
+            nn.Linear(4*n_embd, n_embd) 
         )
 
     def forward(self, x):
@@ -177,35 +176,34 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        # we wont do residual connections here 
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ff(self.ln2(x))
         # since we are concatenating the original input 
-        #x = x + self.attn(self.ln1(x))
-        #x = x + self.ff(self.ln2(x))
-        x = self.attn(self.ln1(x))
-        x = self.ff(self.ln2(x))
+        # we could maybe not use the residual connections here 
+        #x = self.attn(self.ln1(x))
+        #x = self.ff(self.ln2(x))
         return x
 
 class Transformer(nn.Module):
     """ the full transformer model """
     def __init__(self):
         super().__init__()
-        self.projection = nn.Linear(img_size, img_size)
+        self.projection_1st = nn.Linear(img_size, img_size)
         #self.blocks = nn.Sequential(*[Block(n_embd, n_head) for _ in range(n_layers)])
         self.blocks = nn.ModuleList([Block(n_embd, n_head) for _ in range(n_layers)])
-        
-
-        self.block = Block(n_embd, n_head)
+        self.projections = nn.ModuleList([nn.Linear(n_embd, img_size) for _ in range(n_layers)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.linear_f = nn.Linear(n_embd, n_classes)
 
     def forward(self, x, y=None):
         
         x_orig = x # save original input for concatenation
-        x = self.projection(x)  #(B, img_size) -> (B, img_size)
+        x = self.projection_1st(x)  #(B, img_size) -> (B, img_size)
         x = torch.cat([x, x_orig], dim=-1) # (B, img_size) -> (B, 2*img_size=n_embd)
 
         for i in range(n_layers):
-            x = self.blocks[i](x)  # (B, n_embd) -> (B, img_size)
+            x = self.blocks[i](x)  # (B, n_embd) -> (B, n_embd)
+            x = self.projections[i](x) # (B, n_embd) -> (B, img_size)
             x = torch.cat([x, x_orig], dim=-1) # (B, img_size) -> (B, n_embd)
 
         x = self.ln_f(x)
@@ -240,9 +238,11 @@ print(f'number of parameters: %.2fM' %((sum(p.numel() for p in m.parameters() if
 
 # optimizer using AdamW 
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+if use_lr_exp_decay:
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
 # training loop
-train = True
+train = False
 if train == True:
     # get current time for tracking training time
     start_t = time.time()
@@ -264,6 +264,8 @@ if train == True:
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+        if use_lr_exp_decay:
+            scheduler.step()
 
     total_duration = time.time() - start_t
     print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
@@ -277,7 +279,7 @@ print('------------------------------------')
 def classify(img_num):
     print('------------------------------------')
     print(f'classifyig test image {img_num} with a: {(mnist_test[img_num][1])}')
-    x = test_data[img_num].unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
+    x = to_tensor(mnist_test[img_num][0]).flatten().unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
     logits, _ = model(x)
     logits = F.softmax(logits, dim=-1)
     logits = logits.detach().cpu().tolist()[0]
@@ -314,19 +316,19 @@ def evaluate():
     
     correct = 0
     # evaluate the model in batches 
-    for i in range(len(test_data)//batch_size):
-        x,y = get_batch('test', bs=batch_size, rnd=False, start_ix=i*batch_size)
+    for i in range(len(mnist_test)//batch_size):
+        x,y = get_batch('test', bs=batch_size, start_ix=i*batch_size)
         result = eval(x,y)
         correct += result
 
     # get the rest of the data that is not a multiple of batch_size
-    rest_bs = len(test_data)%batch_size
-    x,y = get_batch('test', bs=rest_bs, rnd=False, start_ix=len(test_data)-rest_bs)
+    rest_bs = len(mnist_test)%batch_size
+    x,y = get_batch('test', bs=rest_bs, start_ix=len(mnist_test)-rest_bs)
     result = eval(x,y)
     correct += result
     
-    print(f'correct: {int(correct)} out of {len(test_data)}')
-    print(f'accuracy: {100*correct/len(test_data):.2f}%')
+    print(f'correct: {int(correct)} out of {len(mnist_test)}')
+    print(f'accuracy: {100*correct/len(mnist_test):.2f}%')
 
 evaluate()
 
