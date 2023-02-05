@@ -43,4 +43,12 @@ In addtion dataloader doing augmentation with multiple worker is used to keep th
 This reaches a decent 99.3% accuracy.
 
 
+# mini-ViT_cross-attention.py
+
+This experiment will test out an encoder-decoder architecture with cross-attention
+like in the original Transformer paper. Each layer with the decoder blocks will have a block 
+of self-attention and a block of cross-attention. The cross-attention block will be 
+each have its own encoder block with self-attention that will be fed the original image. 
+
+This is based on mini-ViT_augment and uses the same data augmention strategy
 
