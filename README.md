@@ -29,6 +29,18 @@ first transformer block)
 This is roughly the same as mini-ViT.py, but due to the concatenation with the the
 original input the embedding size is 2ximg_size (2*784=1568) instead. To better fit the change
 of the embedding size the amount of heads is increased to 16 and the dimension is increased
-to 98 (16*98=1568). Additionally the last layer of the transformer feed forward network only has
-img_size size (784) instead of n_embd to be able to concatenate the input with the output of the
-transformer blocks.
+to 98 (16*98=1568). Additionally after the transformer block there is an additional linear 
+projection layer with img_size dimension (784) instead of n_embd (1568) to be able to concatenate
+the input with the output of the transformer blocks.
+
+Results didnt improve though.
+
+# mini-ViT_augment.py
+
+This experiment is using the same architecture as mini-ViT but does additional data augmentation.
+In addtion dataloader doing augmentation with multiple worker is used to keep the GPU busy. 
+
+This reaches a decent 99.3% accuracy.
+
+
+

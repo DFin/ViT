@@ -1,6 +1,6 @@
 ''' 
-Testing out augmentation. Also changed dataloader with multiprocessing 
-due to slow get_batch function.
+Testing out data augmentation. Also changed to dataloader with multiprocessing 
+due to slow get_batch function in the mini-ViT.py script.
 
 the augmentation strategy i was looking at SOTA results on MNIST:
 An Ensemble of Simple Convolutional Neural Network Models for MNIST Digit Recognition
@@ -29,7 +29,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
 
     # model hyperparameters
     batch_size = 2048               # lower for smaller VRAM (2048 needs around 20 GB VRAM)
-    max_iters = 500                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
+    max_iters = 5000                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
     learning_rate = 3e-4            # learning rate
     eval_interval = 10               # steps after which eval set is evaluated
     #eval_iters = 100               # number of samples taken for evaluation
@@ -41,7 +41,8 @@ if __name__ == '__main__': # this is needed for multiprocessing
     n_layers = 16                   # number of layers 
     dropout = 0.1                   # dropout rate
     use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used
-    use_lr_exp_decay = False         # if learning rate should be exponentially decayed	
+    use_lr_exp_decay = True        # if learning rate should be exponentially decayed
+    lr_exp_decay_rate_gamma = 0.999 # learning rate decay rate gamma	
     num_threads = 6                 # number of threads for data loading (set to 0 for no multithreading)
     # ----------------
 
@@ -75,7 +76,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
 
     # data augmentation
     augment = transforms.Compose([
-        transforms.RandomRotation(20),
+        transforms.RandomRotation(30),
         transforms.RandomAffine(0, translate=(0.2, 0.2)),
         transforms.ToTensor(),
         ])
@@ -278,7 +279,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
     # optimizer using AdamW 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     if use_lr_exp_decay:
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_exp_decay_rate_gamma)
 
     # training loop
 
@@ -296,7 +297,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
                 dt = time.time() - t
                 total_t = time.time() - start_t
                 t = time.time()
-                print(f'iter: {iter} lr: {optimizer.param_groups[0]["lr"]} train loss: {losses["train"]:.3f} val loss: {losses["test"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
+                print(f'iter: {iter} lr: {optimizer.param_groups[0]["lr"]:.8f} train loss: {losses["train"]:.3f} val loss: {losses["test"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
                 evaluate()
                 print('----------------------------------------')
 
