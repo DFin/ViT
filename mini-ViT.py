@@ -48,7 +48,7 @@ img_size = 784                  # image size (28x28 for MNIST)
 # model hyperparameters
 batch_size = 2048               # lower for smaller VRAM (2048 needs around 20 GB VRAM)
 max_iters = 5000                # maximum training iterations (very long training time, this can be lowered)
-learning_rate = 1e-4            # learning rate
+learning_rate = 1e-3            # learning rate
 eval_interval = 500             # steps after which eval set is evaluated
 eval_iters = 200                # number of samples taken for evaluation
 
@@ -58,7 +58,8 @@ d_head = 56                     # dimension of each attention head (56 because 1
 n_embd = img_size               # instead of embedding dimension, use image size
 n_layers = 16                   # number of layers 
 dropout = 0.1                   # dropout rate
-use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used	
+use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used
+use_lr_exp_decay = True         # if learning rate should be exponentially decayed	
 # ----------------
 
 # using cuda and Tensorcores if available
@@ -82,44 +83,37 @@ mnist_test=datasets.MNIST('data', train=False, download=True)
 # ------------------
 # Data preprocessing
 # ------------------
+import torchvision.transforms as transforms
 
 # convert PIL images to torch tensors 
-import torchvision.transforms as transforms
-transform = transforms.ToTensor()
+to_tensor = transforms.ToTensor()
+
+# data augmentation
+augment = transforms.Compose([
+    transforms.RandomRotation(20),
+    transforms.RandomAffine(0, translate=(0.2, 0.2)),
+    ])
+
 # one hot encoding of labels
 def one_hot(labels, n_classes):
     return torch.eye(n_classes)[labels]
 
 
-train_data = torch.stack([transform(mnist_train[i][0]).flatten() for i in range(len(mnist_train))])
-test_data = torch.stack([transform(mnist_test[i][0]).flatten() for i in range(len(mnist_test))])
 
-train_labels = one_hot(torch.tensor([mnist_train[i][1] for i in range(len(mnist_train))]), 10)
-test_labels = one_hot(torch.tensor([mnist_test[i][1] for i in range(len(mnist_test))]), 10)
-
-    
- 
-print("MNIST train set size: " + str(len(train_data)))
-print("MNIST test set size: " + str(len(test_data)))
-
-
-# Data batching
-def get_batch(split, bs=batch_size, rnd=True, start_ix=0):
+def get_batch(split, bs=batch_size, start_ix=0):
     # generate a batch of data of inputs x and targets y
     if split == 'train':
-        data_x = train_data
-        data_y = train_labels
+        data = mnist_train
+        ix = torch.randint(len(data), size=(bs,))
+        x = torch.stack([to_tensor(augment(data[i][0])).flatten() for i in ix])
     else: 
-        data_x = test_data
-        data_y = test_labels
-    if rnd:
-        ix = torch.randint(len(data_x), size=(bs,))
-    else:
+        data = mnist_test
         ix = torch.arange(start_ix, start_ix+bs)
-    x = torch.stack([data_x[i] for i in ix])
-    y = torch.stack([data_y[i] for i in ix])
+        x = torch.stack([to_tensor(data[i][0]).flatten() for i in ix])
+    y = torch.stack([one_hot(data[i][1], 10) for i in ix])
     x, y = x.to(device), y.to(device)
     return x, y
+
 
 
 # loss calcucation
@@ -256,6 +250,8 @@ print(f'number of parameters: %.2fM' %((sum(p.numel() for p in m.parameters() if
 
 # optimizer using AdamW 
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+if use_lr_exp_decay:
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
 # training loop
 train = True
@@ -280,6 +276,8 @@ if train == True:
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+        if use_lr_exp_decay:
+            scheduler.step()
 
     total_duration = time.time() - start_t
     print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
@@ -293,7 +291,7 @@ print('------------------------------------')
 def classify(img_num):
     print('------------------------------------')
     print(f'classifyig test image {img_num} with a: {(mnist_test[img_num][1])}')
-    x = test_data[img_num].unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
+    x = to_tensor(mnist_test[img_num][0]).flatten().unsqueeze(0).to(device) # adding batch dimension so it becomes (1, 784)
     logits, _ = model(x)
     logits = F.softmax(logits, dim=-1)
     logits = logits.detach().cpu().tolist()[0]
@@ -330,19 +328,20 @@ def evaluate():
     
     correct = 0
     # evaluate the model in batches 
-    for i in range(len(test_data)//batch_size):
-        x,y = get_batch('test', bs=batch_size, rnd=False, start_ix=i*batch_size)
+    for i in range(len(mnist_test)//batch_size):
+        x,y = get_batch('test', bs=batch_size, start_ix=i*batch_size)
         result = eval(x,y)
         correct += result
 
     # get the rest of the data that is not a multiple of batch_size
-    rest_bs = len(test_data)%batch_size
-    x,y = get_batch('test', bs=rest_bs, rnd=False, start_ix=len(test_data)-rest_bs)
-    result = eval(x,y)
-    correct += result
+    rest_bs = len(mnist_test)%batch_size
+    if rest_bs != 0: # d'oh
+        x,y = get_batch('test', bs=rest_bs, start_ix=len(mnist_test)-rest_bs)
+        result = eval(x,y)
+        correct += result
     
-    print(f'correct: {int(correct)} out of {len(test_data)}')
-    print(f'accuracy: {100*correct/len(test_data):.2f}%')
+    print(f'correct: {int(correct)} out of {len(mnist_test)}')
+    print(f'accuracy: {100*correct/len(mnist_test):.2f}%')
 
 evaluate()
 
