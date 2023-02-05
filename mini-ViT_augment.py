@@ -61,13 +61,11 @@ if __name__ == '__main__': # this is needed for multiprocessing
 
 
 
-
-
     # ------------------
     # Data preprocessing
     # ------------------
 
-    # TODO: #5 use torch dataloader instead of get_batch function
+
     from torchvision import datasets, transforms
     #mport torchvision.transforms as transforms
 
@@ -81,9 +79,6 @@ if __name__ == '__main__': # this is needed for multiprocessing
         transforms.ToTensor(),
         ])
 
-    # one hot encoding of labels
-    def one_hot(labels, n_classes):
-        return torch.eye(n_classes)[labels]
     
     def one_hot_encode(batch, num_classes):
         one_hot = torch.zeros(batch.shape[0], num_classes, dtype=torch.float32)
@@ -261,7 +256,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
                 #y = y.view(B*N)
                 loss = F.cross_entropy(logits, y)
                 # normalize loss by batch size
-                loss = loss #/ B
+                loss = loss * 1000 # scaling loss a bit to make it easier to read 
             return logits, loss
 
     model = Transformer()
