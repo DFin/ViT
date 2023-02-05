@@ -1,35 +1,12 @@
 ''' 
-A simple implemention of a Transformer model for image classification
+Testing out augmentation. Also changed dataloader with multiprocessing 
+due to slow get_batch function.
 
-This file is just a small example of using a transformer on MNIST handwritten
-digits. The processing is run on the full 28x28 image (in comparision to smaller 
-patches like described in the ViT paper).
-
-This is just intended for educational purposes on how to use a transformer for
-image classification in general. The full ViT implementation will follow soon
-in a seperate file.
-
-The model size is also huge for MNIST and I didnt do any optimisations, but
-it reaches a decent accuracy of ~98.5% on the test set.
+the augmentation strategy i was looking at SOTA results on MNIST:
+An Ensemble of Simple Convolutional Neural Network Models for MNIST Digit Recognition
+https://paperswithcode.com/paper/an-ensemble-of-simple-convolutional-neural
 
 
-The transformer implementation follows mostly Karpathy's lection 6 in 
-https://github.com/karpathy/nn-zero-to-hero
-
-The main difference between the transformer here and GPT
-is that this model is not using any masking as for language prediction.
-Instead each pixel (or projection) can attend to each other pixel of the image
-(as long as emebdding dimension = image size).
-
-Also the embedding layer is replaced by a linear layer in case the embedding
-size is different from the image size.
-When embedding_size = image size, the initial projection layer is not needed
-and the input will be directly fed into the transformer. This has the advantage
-that the image will be used for the residual connection in the first layer (later
-layers will have the sum of features and the image as residual conntections).
-
-Also there is no positional encoding for pixel position 
-(I actually tried this, but it didnt improve and even reduced accuracy).
 '''
 
 from torch.multiprocessing import freeze_support
@@ -52,10 +29,10 @@ if __name__ == '__main__': # this is needed for multiprocessing
 
     # model hyperparameters
     batch_size = 2048               # lower for smaller VRAM (2048 needs around 20 GB VRAM)
-    max_iters = 1                 # maximum training iterations (very long training time, this can be lowered)
+    max_iters = 50                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
     learning_rate = 1e-3            # learning rate
-    eval_interval = 5              # steps after which eval set is evaluated
-    #eval_iters = 100                # number of samples taken for evaluation
+    eval_interval = 5               # steps after which eval set is evaluated
+    #eval_iters = 100               # number of samples taken for evaluation
 
     n_head = 14                     # number of attention heads (14 because 14x56 = 784 = img_size)
     d_head = 56                     # dimension of each attention head (56 because 14x56 = 784 = img_size)

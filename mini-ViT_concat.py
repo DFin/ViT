@@ -7,6 +7,8 @@ with the output of the transformer blocks.
 
 This is a seperate file to keep the the mini-ViT.py file clean and easy to read.
 
+The test accuracy didnt change in comparison to mini-ViT.py. Seems not worth it.
+
 '''
 
 import torch
