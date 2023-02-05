@@ -29,9 +29,9 @@ if __name__ == '__main__': # this is needed for multiprocessing
 
     # model hyperparameters
     batch_size = 2048               # lower for smaller VRAM (2048 needs around 20 GB VRAM)
-    max_iters = 50                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
-    learning_rate = 1e-3            # learning rate
-    eval_interval = 5               # steps after which eval set is evaluated
+    max_iters = 500                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
+    learning_rate = 3e-4            # learning rate
+    eval_interval = 10               # steps after which eval set is evaluated
     #eval_iters = 100               # number of samples taken for evaluation
 
     n_head = 14                     # number of attention heads (14 because 14x56 = 784 = img_size)
@@ -41,7 +41,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
     n_layers = 16                   # number of layers 
     dropout = 0.1                   # dropout rate
     use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used
-    use_lr_exp_decay = True         # if learning rate should be exponentially decayed	
+    use_lr_exp_decay = False         # if learning rate should be exponentially decayed	
     num_threads = 6                 # number of threads for data loading (set to 0 for no multithreading)
     # ----------------
 
@@ -135,6 +135,28 @@ if __name__ == '__main__': # this is needed for multiprocessing
             out[split] = losses.mean()
         model.train()
         return out
+    
+    
+    # evaluate full model
+    def evaluate():
+        def eval(x,y):
+            logits, _ = model(x)
+            logits = F.softmax(logits, dim=-1)
+            max_value = torch.max(logits, dim=1, keepdim=True)  # get maximum value of each row 
+            index = max_value[1] # get the index 
+            y = one_hot_encode(y, num_classes=10).to(device) # one hot encode the labels
+            #y = y.to(device)
+            result = y.gather(dim=1, index=index) # get the index of the correct label
+            result = result.sum()  # since this will be 0 for incorrect predictions and 1 for correct predictions we can just sum up
+            return result
+        
+        correct = 0
+        for _, (xb, yb) in enumerate(test_loader):
+            xb, yb = xb.to(device), yb.to(device, dtype=torch.long)
+            xb = xb.view(xb.shape[0], -1) # flatten the images (B, 1, 28, 28) -> (B, 784)
+            result = eval(xb,yb)
+            correct += result
+        print(f'correct: {int(correct)}/{len(mnist_test)} - accuracy: {100*correct/len(mnist_test):.2f}%')
 
     #----------------
     #Transformer Model
@@ -265,6 +287,8 @@ if __name__ == '__main__': # this is needed for multiprocessing
         # get current time for tracking training time
         start_t = time.time()
         t = start_t
+        print('----------------------------------------')
+
         for iter in range(max_iters):
             # every once in a while evaluate the loss on the train and val sets
             if iter % eval_interval == 0:# and iter > 0:
@@ -272,8 +296,9 @@ if __name__ == '__main__': # this is needed for multiprocessing
                 dt = time.time() - t
                 total_t = time.time() - start_t
                 t = time.time()
-                print(f'iter: {iter} train loss: {losses["train"]:.3f} val loss: {losses["test"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
-                #print(f'iter: {iter} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
+                print(f'iter: {iter} lr: {optimizer.param_groups[0]["lr"]} train loss: {losses["train"]:.3f} val loss: {losses["test"]:.3f} time: {time.strftime("%H:%M:%S", time.gmtime(dt))} total: {time.strftime("%H:%M:%S", time.gmtime(total_t))}')
+                evaluate()
+                print('----------------------------------------')
 
             for batch_idx, (xb, yb) in enumerate(train_loader):
                 #print(batch_idx)
@@ -283,22 +308,10 @@ if __name__ == '__main__': # this is needed for multiprocessing
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
-                if use_lr_exp_decay:
-                    scheduler.step()
+            if use_lr_exp_decay:
+                scheduler.step()
 
                 
-
-            # # smaple a batch of data
-            # xb, yb = get_batch('train')
-
-            # # evaluate the loss
-            # logits, loss = model(xb, yb)
-            # optimizer.zero_grad(set_to_none=True)
-            # loss.backward()
-            # optimizer.step()
-            # if use_lr_exp_decay:
-            #     scheduler.step()
-
         total_duration = time.time() - start_t
         print(f'time needed to train: {time.strftime("%H:%M:%S", time.gmtime(total_duration))}')
 
@@ -336,42 +349,5 @@ if __name__ == '__main__': # this is needed for multiprocessing
     print('------------------------------------')
     print('final evaluation')
     print('------------------------------------')
-
-    def evaluate():
-        def eval(x,y):
-            logits, _ = model(x)
-            logits = F.softmax(logits, dim=-1)
-            max_value = torch.max(logits, dim=1, keepdim=True)  # get maximum value of each row 
-            index = max_value[1] # get the index 
-            y = one_hot_encode(y, num_classes=10).to(device) # one hot encode the labels
-            #y = y.to(device)
-            result = y.gather(dim=1, index=index) # get the index of the correct label
-            result = result.sum()  # since this will be 0 for incorrect predictions and 1 for correct predictions we can just sum up
-            return result
-        
-        correct = 0
-        # evaluate the model in batches 
-        # for i in range(len(mnist_test)//batch_size):
-        #     x,y = get_batch('test', bs=batch_size, start_ix=i*batch_size)
-        #     result = eval(x,y)
-        #     correct += result
-
-        # # get the rest of the data that is not a multiple of batch_size
-        # rest_bs = len(mnist_test)%batch_size
-        # if rest_bs != 0: # d'oh
-        #     x,y = get_batch('test', bs=rest_bs, start_ix=len(mnist_test)-rest_bs)
-        #     result = eval(x,y)
-        #     correct += result
-        for _, (xb, yb) in enumerate(test_loader):
-            xb, yb = xb.to(device), yb.to(device, dtype=torch.long)
-            xb = xb.view(xb.shape[0], -1) # flatten the images (B, 1, 28, 28) -> (B, 784)
-            result = eval(xb,yb)
-            correct += result
-
-        
-        print(f'correct: {int(correct)} out of {len(mnist_test)}')
-        print(f'accuracy: {100*correct/len(mnist_test):.2f}%')
-
     evaluate()
-
     print('------------------------------------')
