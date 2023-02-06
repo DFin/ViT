@@ -48,7 +48,6 @@ This reaches a decent 99.3% accuracy.
 This experiment will test out an encoder-decoder architecture with cross-attention
 like in the original Transformer paper. Each layer with the decoder blocks will have a block 
 of self-attention and a block of cross-attention. The cross-attention block will be 
-each have its own encoder block with self-attention that will be fed the original image. 
+each have its own encoder block with self-attention that will be fed the original image. This is based on mini-ViT_augment and uses the same data augmention strategy.
 
-This is based on mini-ViT_augment and uses the same data augmention strategy
-
+With accuracy: 99.3% it didn't reach any improvement over self attention.

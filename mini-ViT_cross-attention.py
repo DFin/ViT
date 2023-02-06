@@ -4,13 +4,16 @@ like in the original Transformer paper. Each layer with the decoder blocks will 
 of self-attention and a block of cross-attention. The cross-attention block will be 
 each have its own encoder block with self-attention that will be fed the original image. 
 
+The amount of layers will be halfed compared to the mini-ViT experiment as each layers 
+has 2 attention blocks (+ 1 encoder for cross-attention) anyway.
+
 
 So it looks basically like this:
 
             +------------------------------------+        +------------------------------------+
             |                                    |        |                                    |
             |   +----------------+               |        |   +----------------+               |
-            |   |                |               |        |   |                |               |
+            |   |                |               |  Query |   |                |               |
  previous --|-->|Encoder Block 1 |---------------|--------|-->|  Decoder Block |               | --->
  layer      |   |                |               |        |   |                |               |
             |   +----------------+               |        |   +----------------+               |
@@ -19,9 +22,9 @@ So it looks basically like this:
                                                                 ^
                                                                 |
             +------------------------------------+              |  Cross Attention
-            |                                    |              |  Key + Value from
-            |   +----------------+               |              |  Encoder Block 2 
-            |   |                |               |              |
+            |                                    |              |  
+            |   +----------------+               |              |  Key + Value from  
+            |   |                |               |              |  Encoder Block 2 
 original ---|-->|Encoder Block 2 |---------------|--------------+
 input       |   |                |               |
             |   +----------------+               |
@@ -49,26 +52,23 @@ if __name__ == '__main__': # this is needed for multiprocessing
     # Hyperparameters & Global variables
     # ----------------
     #
-    # global variables
     n_classes = 10                  # number of classes (10 for MNIST)
     img_size = 784                  # image size (28x28 for MNIST)
-
-    # model hyperparameters
-    batch_size = 512               # lower for smaller VRAM (512 needs around 23 GB VRAM)
-    max_iters = 5000                  # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
+    batch_size = 512                # lower for smaller VRAM (512 needs around 17 GB VRAM)
+    max_iters = 5000                # maximum training iterations // compared to mini-ViT.py an iter goes through the whole dataset
     learning_rate = 3e-4            # learning rate
-    eval_interval = 10               # steps after which eval set is evaluated
+    eval_interval = 5               # steps after which eval set is evaluated
     #eval_iters = 100               # number of samples taken for evaluation
 
     n_head = 14                     # number of attention heads (14 because 14x56 = 784 = img_size)
     d_head = 56                     # dimension of each attention head (56 because 14x56 = 784 = img_size)
     #n_embd = n_head * d_head       # embedding dimension (using head dimension * number of heads)
     n_embd = img_size               # instead of embedding dimension, use image size
-    n_layers = 16                    # number of layers 
+    n_layers = 12                   # number of layers 
     dropout = 0.1                   # dropout rate
     use_GELU = True                 # if GELU (True) or ReLU and dropout (False) should be used
-    use_lr_exp_decay = True        # if learning rate should be exponentially decayed
-    lr_exp_decay_rate_gamma = 0.999 # learning rate decay rate gamma	
+    use_lr_exp_decay = True         # if learning rate should be exponentially decayed
+    lr_exp_decay_rate_gamma = 0.9995 # learning rate decay rate gamma	
     num_threads = 6                 # number of threads for data loading (set to 0 for no multithreading)
     # ----------------
 
@@ -161,6 +161,7 @@ if __name__ == '__main__': # this is needed for multiprocessing
     
     # evaluate full model
     def evaluate():
+        model.eval()
         def eval(x,y):
             logits, _ = model(x)
             logits = F.softmax(logits, dim=-1)
@@ -178,61 +179,12 @@ if __name__ == '__main__': # this is needed for multiprocessing
             xb = xb.view(xb.shape[0], -1) # flatten the images (B, 1, 28, 28) -> (B, 784)
             result = eval(xb,yb)
             correct += result
+        model.train()
         print(f'correct: {int(correct)}/{len(mnist_test)} - accuracy: {100*correct/len(mnist_test):.2f}%')
 
     #----------------
     #Transformer Model
     #----------------
-    # class SelfAttentionHead(nn.Module):
-    #     """ One head of self-attention """
-    #     def __init__(self, head_size):
-    #         super().__init__()
-    #         self.linear_q = nn.Linear(n_embd, head_size, bias=False)
-    #         self.linear_k = nn.Linear(n_embd, head_size, bias=False)
-    #         self.linear_v = nn.Linear(n_embd, head_size, bias=False)
-    #         self.dropout = nn.Dropout(dropout)
-
-    #     def forward(self, x):
-    #         B, N = x.shape
-    #         q = self.linear_q(x)
-    #         k = self.linear_k(x)
-    #         v = self.linear_v(x)
-
-    #         # calculate attention
-    #         attn = torch.einsum('bi,bj->bij', q, k) # (B, N) @ (B, N) -> (B, N, N)
-    #         attn = attn * N ** -0.5
-    #         attn = F.softmax(attn, dim=-1)
-    #         attn = self.dropout(attn)
-
-    #         # calculate output
-    #         out = torch.einsum('bij,bj->bi', attn, v) # (B, N, N) @ (B, N) -> (B, N)
-    #         return out
-        
-    # class CrossAttentionHead(nn.Module):
-    #     """ One head of cross-attention """
-    #     def __init__(self, head_size):
-    #         super().__init__()
-    #         self.linear_q = nn.Linear(n_embd, head_size, bias=False)
-    #         self.linear_k = nn.Linear(n_embd, head_size, bias=False)
-    #         self.linear_v = nn.Linear(n_embd, head_size, bias=False)
-    #         self.dropout = nn.Dropout(dropout)
-
-    #     def forward(self, x1, x2):
-    #         B, N = x1.shape
-    #         q = self.linear_q(x1)
-    #         k = self.linear_k(x2)
-    #         v = self.linear_v(x2)
-
-    #         # calculate attention
-    #         attn = torch.einsum('bi,bj->bij', q, k) # (B, N) @ (B, N) -> (B, N, N)
-    #         attn = attn * N ** -0.5
-    #         attn = F.softmax(attn, dim=-1)
-    #         attn = self.dropout(attn)
-
-    #         # calculate output
-    #         out = torch.einsum('bij,bj->bi', attn, v) # (B, N, N) @ (B, N) -> (B, N)
-    #         return out
-
     class Head(nn.Module):
         """ One head for both self or cross-attention """
         def __init__(self, head_size, cross_attention=False):
@@ -242,11 +194,11 @@ if __name__ == '__main__': # this is needed for multiprocessing
             self.linear_v = nn.Linear(n_embd, head_size, bias=False)
             self.dropout = nn.Dropout(dropout)
 
-        def forward(self, x1, x2=None):
-            B, N = x1.shape
+        def forward(self, x, x2=None):
+            B, N = x.shape
             if x2 is None: # cross attention when x2 is not None
-                x2 = x1    # otherwise self attention
-            q = self.linear_q(x1)
+                x2 = x    # otherwise self attention
+            q = self.linear_q(x)
             k = self.linear_k(x2)
             v = self.linear_v(x2)
 
@@ -269,11 +221,11 @@ if __name__ == '__main__': # this is needed for multiprocessing
             self.linear = nn.Linear(n_embd, n_embd)
             self.dropout = nn.Dropout(dropout)
 
-        def forward(self, x1 , x2=None):
+        def forward(self, x , x2=None):
             if x2 == None:
-                out = torch.cat([head(x1) for head in self.heads], dim=-1)
+                out = torch.cat([head(x) for head in self.heads], dim=-1)
             else:
-                out = torch.cat([head(x1, x2) for head in self.heads], dim=-1)
+                out = torch.cat([head(x, x2) for head in self.heads], dim=-1)
             out = self.linear(out)
             out = self.dropout(out)
             return out
